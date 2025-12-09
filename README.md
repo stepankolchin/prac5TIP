@@ -12,21 +12,78 @@
 
 - создание БД/таблицы в psql
 
+<img width="481" height="201" alt="screen1" src="https://github.com/user-attachments/assets/f8b4aa42-33c5-4159-bf30-692ef7b0775b" />
 
 - успешный вывод go run . (вставка и список задач);
 
-
-
-
+<img width="569" height="457" alt="screen2" src="https://github.com/user-attachments/assets/30b70bd1-930e-4851-94f7-3c8198215d7f" />
 
 - SELECT * FROM tasks; в psql
 
-
+<img width="608" height="219" alt="screen3" src="https://github.com/user-attachments/assets/0cbb3552-c809-428a-af55-de0996f1d325" />
 
 ### Код:
 
-- [db.go](./db.go)
-- [repository.go](./repository.go)
+```GO
+// db.go
+package main
+
+import (
+	"context"
+	"database/sql"
+	"log"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+func openDB(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Настройки пула соединений
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
+	// Проверка соединения с таймаутом
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return nil, err
+	}
+
+	log.Println("Connected to PostgreSQL")
+	return db, nil
+}
+```
+```GO
+// Реализация фунции ListDone
+
+// ListDone возвращает только выполненные (done=true) или невыполненные (done=false) задачи
+func (r *Repo) ListDone(ctx context.Context, done bool) ([]Task, error) {
+    const q = `SELECT id, title, done, created_at FROM tasks WHERE done = $1 ORDER BY id;`
+    
+    rows, err := r.DB.QueryContext(ctx, q, done)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var out []Task
+    for rows.Next() {
+        var t Task
+        if err := rows.Scan(&t.ID, &t.Title, &t.Done, &t.CreatedAt); err != nil {
+            return nil, err
+        }
+        out = append(out, t)
+    }
+    return out, rows.Err()
+}
+```
 
 ```GO
 //Фрагмент main.go
@@ -84,7 +141,7 @@ func main() {
 
 `Exec` — для 0 строк
 
-### 6 Обоснование транзакций и настроек пула:
+### Обоснование транзакций и настроек пула:
 
 - `SetMaxOpenConns(10)`:
 
